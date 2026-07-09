@@ -1,16 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Camera, FolderKanban, Search } from 'lucide-react';
-
-const navItems = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/scan', label: 'Scan Fatura', icon: Camera },
-  { path: '/obras', label: 'Obras', icon: FolderKanban },
-  { path: '/pesquisa', label: 'Preços', icon: Search },
-];
+import { LayoutDashboard, Camera, FolderKanban, Search, Users } from 'lucide-react';
+import { useAuth } from '../lib/supabase';
 
 export function Navigation() {
+  const { profile } = useAuth();
+
   return (
-    <nav className="glass-panel" style={{
+    <nav style={{
       position: 'fixed',
       bottom: '1.5rem',
       left: '50%',
@@ -21,31 +17,39 @@ export function Navigation() {
       paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))',
       zIndex: 50,
       borderRadius: 'var(--radius-full)'
-    }}>
-      {navItems.map((item) => {
-        const Icon = item.icon;
-        return (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            style={({ isActive }) => ({
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '0.25rem',
-              padding: '0.5rem 1rem',
-              color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
-              textDecoration: 'none',
-              borderRadius: 'var(--radius-md)',
-              transition: 'all 0.2s ease',
-              backgroundColor: isActive ? 'var(--primary-light)' : 'transparent'
-            })}
-          >
-            <Icon size={20} />
-            <span style={{ fontSize: '0.75rem', fontWeight: 500 }}>{item.label}</span>
-          </NavLink>
-        );
-      })}
+    }} className="glass-panel">
+      
+      <NavLink to="/" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} end>
+        <LayoutDashboard size={24} />
+      </NavLink>
+      
+      <NavLink to="/obras" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+        <FolderKanban size={24} />
+      </NavLink>
+
+      <NavLink to="/scan" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+        <div style={{
+          backgroundColor: 'var(--primary)',
+          color: 'white',
+          padding: '0.75rem',
+          borderRadius: '50%',
+          marginTop: '-1.5rem',
+          boxShadow: '0 4px 20px rgba(59, 130, 246, 0.4)'
+        }}>
+          <Camera size={28} />
+        </div>
+      </NavLink>
+
+      <NavLink to="/pesquisa" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+        <Search size={24} />
+      </NavLink>
+
+      {profile?.role === 'admin' && (
+        <NavLink to="/admin" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          <Users size={24} />
+        </NavLink>
+      )}
+
     </nav>
   );
 }

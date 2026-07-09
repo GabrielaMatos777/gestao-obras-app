@@ -1,3 +1,11 @@
+export type Profile = {
+  id: string;
+  username: string;
+  role: 'admin' | 'user';
+  must_change_password: boolean;
+  created_at: string;
+};
+
 export type Obra = {
   id: string;
   nome_obra: string;

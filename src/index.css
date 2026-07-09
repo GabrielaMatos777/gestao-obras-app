@@ -1,5 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
+@import './nav.css';
+
 :root {
   /* Premium Dark Mode Color Palette */
   --bg-base: #0f1115;

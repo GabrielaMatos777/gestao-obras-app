@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { HardHat, Loader2 } from 'lucide-react';
+import { HardHat, Loader2, Eye, EyeOff } from 'lucide-react';
 
 export function Login() {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -13,13 +15,20 @@ export function Login() {
     setLoading(true);
     setError(null);
 
+    // Mapeamento invisível: login com username converte para email
+    const emailToAuth = `${username.toLowerCase().trim()}@obras.local`;
+
     const { error } = await supabase.auth.signInWithPassword({
-      email,
+      email: emailToAuth,
       password,
     });
 
     if (error) {
-      setError(error.message);
+      if (error.message.includes('Invalid login credentials')) {
+         setError('Nome de utilizador ou palavra-passe incorretos.');
+      } else {
+         setError(error.message);
+      }
     }
     setLoading(false);
   };
@@ -32,7 +41,6 @@ export function Login() {
             <HardHat size={48} />
           </div>
           <h1 style={{ fontSize: '1.75rem', marginBottom: '0.5rem', textAlign: 'center' }}>Gestão de Obras</h1>
-          <p style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>Área reservada a Gestores</p>
         </div>
 
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -43,27 +51,40 @@ export function Login() {
           )}
           
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">Email</label>
+            <label className="form-label">Username</label>
             <input 
-              type="email" 
+              type="text" 
               className="form-control" 
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="exemplo@empresa.pt"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="ex: gabrielamatos"
+              autoCapitalize="none"
+              autoCorrect="off"
             />
           </div>
           
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">Palavra-passe</label>
-            <input 
-              type="password" 
-              className="form-control" 
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-            />
+            <div style={{ position: 'relative' }}>
+              <input 
+                type={showPassword ? "text" : "password"} 
+                className="form-control" 
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                style={{ paddingRight: '3rem' }}
+              />
+              <button 
+                type="button"
+                className="btn-icon"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', padding: '0.5rem', color: 'var(--text-muted)' }}
+              >
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
           </div>
 
           <button 
