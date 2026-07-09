@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { HardHat, Loader2, Eye, EyeOff } from 'lucide-react';
 
 export function Login() {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   
@@ -15,14 +15,17 @@ export function Login() {
     setLoading(true);
     setError(null);
 
+    // Username visível → email fictício invisível
+    const emailToAuth = `${username.toLowerCase().trim()}@obras.local`;
+
     const { error } = await supabase.auth.signInWithPassword({
-      email: email.toLowerCase().trim(),
+      email: emailToAuth,
       password,
     });
 
     if (error) {
       if (error.message.includes('Invalid login credentials')) {
-         setError('Email ou palavra-passe incorretos.');
+         setError('Nome de utilizador ou palavra-passe incorretos.');
       } else {
          setError(error.message);
       }
@@ -48,14 +51,14 @@ export function Login() {
           )}
           
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">Email</label>
+            <label className="form-label">Username</label>
             <input 
-              type="email" 
+              type="text" 
               className="form-control" 
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="ex: gabriela@email.com"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="ex: gabrielamatos"
               autoCapitalize="none"
               autoCorrect="off"
             />
