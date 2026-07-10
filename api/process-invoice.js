@@ -46,50 +46,38 @@ Devolve a resposta APENAS e EXCLUSIVAMENTE num formato JSON válido e puro com a
 }
 Não incluas blocos \`\`\`json ou outro texto fora deste JSON, apenas o próprio JSON. Se não conseguires ler, deixa em branco.`;
 
-    // Chamada à API da Google Gemini
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    
+    const { GoogleGenAI } = await import('@google/genai');
+    const ai = new GoogleGenAI({ apiKey });
+
     // Limpar o prefixo "data:image/jpeg;base64," caso venha do frontend
     const base64Data = imageBase64.replace(/^data:[a-zA-Z0-9\/+-]+;base64,/, "");
 
-    const response = await fetch(geminiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: systemPrompt },
-              {
-                inline_data: {
-                  mime_type: mimeType || "image/jpeg",
-                  data: base64Data,
-                },
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.0, // Garantir a máxima determinabilidade, zero criatividade
+    const response = await ai.models.generateContent({
+      model: 'gemini-1.5-flash',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: systemPrompt },
+            {
+              inlineData: {
+                data: base64Data,
+                mimeType: mimeType || "image/jpeg"
+              }
+            }
+          ]
         }
-      }),
+      ],
+      config: {
+        temperature: 0.0,
+      }
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("Gemini API Error details:", errText);
-      throw new Error(`Erro na API do Gemini (${response.status})`);
-    }
-
-    const result = await response.json();
+    let extractedText = response.text;
     
-    if (!result.candidates || result.candidates.length === 0) {
-      throw new Error("A API Gemini não devolveu candidatos de resposta.");
+    if (!extractedText) {
+      throw new Error("A API Gemini não devolveu qualquer texto de resposta.");
     }
-
-    let extractedText = result.candidates[0].content.parts[0].text;
     
     // Limpar markdown de JSON se o Gemini o tiver incluído ignorando a instrução
     extractedText = extractedText.trim();
