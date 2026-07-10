@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { CheckCircle, AlertCircle, Save, Loader2, RefreshCw, Upload, Camera, ImageIcon, PenLine, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { CheckCircle, AlertCircle, Save, Loader2, RefreshCw, Camera, ImageIcon, PenLine, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase, useAuth } from '../lib/supabase';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import type { Obra } from '../types/database';
