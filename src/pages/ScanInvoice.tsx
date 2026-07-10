@@ -115,9 +115,12 @@ export function ScanInvoice() {
     loadReferences();
   }, []);
 
-  const processFile = (selectedFile: File) => {
+  const [ocrError, setOcrError] = useState<string | null>(null);
+
+  const processFile = async (selectedFile: File) => {
     setFile(selectedFile);
     setIsManual(false);
+    setOcrError(null);
     if (selectedFile.type === 'application/pdf') {
       setPreview(null);
     } else {
@@ -126,19 +129,56 @@ export function ScanInvoice() {
     setIsScanning(true);
     setScanComplete(false);
     
-    // PROMPT DO SISTEMA DE OCR (BACKEND):
-    // "És um motor de OCR cego. A tua única função é a extração verbatim (cópia exata, letra a letra) do que está na imagem. NÃO normalizes nomes de produtos. NÃO inventes categorias. NÃO tentes corrigir a ortografia. Extrai as linhas de produtos e valores exatamente como estão impressos. Devolve a resposta em formato JSON puro."
-    
-    // TODO: Chamar API real de OCR aqui
-    setTimeout(() => {
+    try {
+      // PROMPT DO SISTEMA DE OCR (BACKEND):
+      // "És um motor de OCR cego. A tua única função é a extração verbatim (cópia exata, letra a letra) do que está na imagem. NÃO normalizes nomes de produtos. NÃO inventes categorias. NÃO tentes corrigir a ortografia. Extrai as linhas de produtos e valores exatamente como estão impressos. Devolve a resposta em formato JSON puro."
+      
+      // Chamada à API real via Supabase Edge Functions (ou backend configurado)
+      // Substituir 'extract-invoice' pelo nome correto da função se necessário.
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      const { data, error } = await supabase.functions.invoke('extract-invoice', {
+        body: formData,
+      });
+
+      if (error) throw error;
+      if (!data) throw new Error("A API não devolveu dados.");
+
+      console.log("OCR Response:", data);
+
+      // Data Mapping (Parsing)
+      // Ajustar os nomes das chaves (fornecedor, data, total, linhas) para coincidir com o JSON real
+      setFornecedor(data.fornecedor || '');
+      setDataCompra(data.data || '');
+      setValorTotal(data.total || '');
+      
+      if (data.linhas && Array.isArray(data.linhas)) {
+        setItems(data.linhas.map((linha: any, index: number) => ({
+          id: String(index),
+          originalText: linha.descricao || linha.originalText || '',
+          normalizedText: '',
+          qty: linha.quantidade || linha.qty || 1,
+          price: linha.preco_unitario || linha.price || 0,
+        })));
+      } else {
+        setItems([]);
+      }
+
+    } catch (err: any) {
+      console.error("OCR Error:", err);
+      setOcrError(err.message || "Falha na comunicação com o serviço de OCR.");
+      
+      // Em caso de erro, manter os campos vazios para preenchimento manual
       setFornecedor('');
       setDataCompra('');
       setValorTotal('');
-      setItems([]); // Sem mock data. Se a API falhar/não existir, a lista fica vazia.
+      setItems([]);
+    } finally {
       setIsScanning(false);
       setScanComplete(true);
       setShowOcrLines(true); // Exibir sempre o painel expansível/lista aberta
-    }, 1500);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -360,6 +400,17 @@ export function ScanInvoice() {
                 <button className="btn-icon" onClick={resetForm} style={{ marginLeft: 'auto', padding: '0.25rem' }} disabled={saving}><RefreshCw size={20} /></button>
               )}
             </div>
+
+            {/* Error Notification */}
+            {ocrError && (
+              <div style={{ padding: '1rem', backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--danger)', borderRadius: 'var(--radius-md)', color: 'var(--danger)', marginBottom: '1.5rem', display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                <AlertCircle size={20} style={{ flexShrink: 0, marginTop: '2px' }} />
+                <div>
+                  <strong>Erro ao ler documento:</strong>
+                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.875rem' }}>{ocrError}</p>
+                </div>
+              </div>
+            )}
 
             {/* Motivo Manual */}
             {isManual && (
