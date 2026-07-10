@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { CheckCircle, AlertCircle, Save, Loader2, RefreshCw, Camera, ImageIcon, PenLine, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import Tesseract from 'tesseract.js';
 import { supabase, useAuth } from '../lib/supabase';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import type { Obra } from '../types/database';
@@ -130,60 +131,52 @@ export function ScanInvoice() {
     setScanComplete(false);
     
     try {
-      // PROMPT DO SISTEMA DE OCR (BACKEND):
-      // A lógica agora vive em /api/process-invoice (Vercel Serverless Function)
-      // para garantir que o deploy não requer Edge Functions do Supabase CLI.
+      // Extração OCR Local via Tesseract.js (Frontend)
+      const result = await Tesseract.recognize(selectedFile, 'por', {
+        logger: m => console.log(m)
+      });
       
-      // Converter ficheiro para Base64
-      const base64String = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(selectedFile);
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = error => reject(error);
-      });
+      const text = result.data.text;
+      console.log("Texto extraído:", text);
 
-      const response = await fetch('/api/process-invoice', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          imageBase64: base64String,
-          mimeType: selectedFile.type,
-        }),
-      });
+      // Regex best-effort para apanhar Totais e Datas
+      const totalMatch = text.match(/(?:Total|Total a pagar|Valor Total|Total EUR|EUR).*?(?:€)?\s*(\d+[,.]\d{2})/i);
+      const dateMatch = text.match(/\b(\d{2}[-/.]\d{2}[-/.]\d{4})\b/);
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error ? (errData.details ? `${errData.error}\nDetalhes: ${errData.details}` : errData.error) : `Erro do servidor: ${response.status}`);
+      let parsedTotal = '';
+      if (totalMatch && totalMatch[1]) {
+        parsedTotal = totalMatch[1].replace(',', '.');
       }
 
-      const data = await response.json();
-      if (!data) throw new Error("A API não devolveu dados.");
-
-      console.log("OCR Response:", data);
-
-      // Data Mapping (Parsing)
-      // Ajustar os nomes das chaves (fornecedor, data, total, linhas) para coincidir com o JSON real
-      setFornecedor(data.fornecedor || '');
-      setDataCompra(data.data || '');
-      setValorTotal(data.total || '');
-      
-      if (data.linhas && Array.isArray(data.linhas)) {
-        setItems(data.linhas.map((linha: any, index: number) => ({
-          id: String(index),
-          originalText: linha.descricao || linha.originalText || '',
-          normalizedText: '',
-          qty: linha.quantidade || linha.qty || 1,
-          price: linha.preco_unitario || linha.price || 0,
-        })));
-      } else {
-        setItems([]);
+      let parsedDate = '';
+      if (dateMatch && dateMatch[1]) {
+        // Tentar formatar para YYYY-MM-DD
+        const parts = dateMatch[1].split(/[-/.]/);
+        if (parts.length === 3) {
+          parsedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+        }
       }
+
+      setFornecedor('');
+      setDataCompra(parsedDate);
+      setValorTotal(parsedTotal ? Number(parsedTotal) : '');
+      
+      // Partir o texto bruto em linhas e apresentar como "items verbatim"
+      const rawLines = text.split('\n')
+        .map(l => l.trim())
+        .filter(l => l.length > 3 && !l.toLowerCase().includes('total'));
+      
+      setItems(rawLines.map((l, idx) => ({
+        id: String(idx),
+        originalText: l,
+        normalizedText: '',
+        qty: 1,
+        price: 0
+      })));
 
     } catch (err: any) {
       console.error("OCR Error:", err);
-      setOcrError(err.message || "Falha na comunicação com o serviço de OCR.");
+      setOcrError(err.message || "Falha na extração local da imagem.");
       
       // Em caso de erro, manter os campos vazios para preenchimento manual
       setFornecedor('');
