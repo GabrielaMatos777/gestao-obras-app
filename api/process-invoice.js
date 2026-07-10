@@ -53,18 +53,13 @@ Não incluas blocos \`\`\`json ou outro texto fora deste JSON, apenas o próprio
     const base64Data = imageBase64.replace(/^data:[a-zA-Z0-9\/+-]+;base64,/, "");
 
     const fallbackModels = [
-      'gemini-1.5-flash-latest',
-      'gemini-1.5-flash',
       'gemini-2.5-flash',
-      'gemini-1.5-pro-latest',
-      'gemini-1.5-pro',
-      'gemini-1.0-pro-vision-latest',
-      'gemini-pro-vision'
+      'gemini-flash-latest'
     ];
 
     let response;
     let success = false;
-    let lastErrorDetails = "";
+    let errorsLog = [];
 
     for (const modelName of fallbackModels) {
       try {
@@ -94,7 +89,7 @@ Não incluas blocos \`\`\`json ou outro texto fora deste JSON, apenas o próprio
         break; // Sai do loop se tiver sucesso
       } catch (err) {
         console.warn(`Falha no modelo ${modelName}:`, err.message);
-        lastErrorDetails = err.message;
+        errorsLog.push(`${modelName}: ${err.message}`);
         // Continua para o próximo modelo da lista
       }
     }
@@ -113,7 +108,7 @@ Não incluas blocos \`\`\`json ou outro texto fora deste JSON, apenas o próprio
         console.error("Erro ao tentar listar modelos:", e);
       }
 
-      throw new Error(`Nenhum modelo suportado pela sua chave API funcionou. Pode ter um bloqueio de região, limite esgotado ou precisar de ativar faturação (Billing) na Google Cloud. Modelos descobertos na sua chave: [${availableModelsStr}]. Último erro: ${lastErrorDetails}`);
+      throw new Error(`Nenhum modelo suportado pela sua chave API funcionou. Modelos disponíveis na sua chave: [${availableModelsStr}]. Detalhes dos erros: ${errorsLog.join(' | ')}`);
     }
 
     let extractedText = response.text;
