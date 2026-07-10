@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     
     if (!apiKey) {
       return res.status(500).json({ 
-        error: "Chave de ambiente GEMINI_API_KEY em falta no Vercel. O motor de OCR não pode arrancar." 
+        error: "Chave GEMINI_API_KEY em falta. Se já a adicionou no Vercel, confirme que a caixa 'Production' está selecionada nas definições da variável." 
       });
     }
 
