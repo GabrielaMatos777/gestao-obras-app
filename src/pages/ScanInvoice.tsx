@@ -131,18 +131,23 @@ export function ScanInvoice() {
     
     try {
       // PROMPT DO SISTEMA DE OCR (BACKEND):
-      // "És um motor de OCR cego. A tua única função é a extração verbatim (cópia exata, letra a letra) do que está na imagem. NÃO normalizes nomes de produtos. NÃO inventes categorias. NÃO tentes corrigir a ortografia. Extrai as linhas de produtos e valores exatamente como estão impressos. Devolve a resposta em formato JSON puro."
+      // A lógica agora vive em /api/process-invoice (Vercel Serverless Function)
+      // para garantir que o deploy não requer Edge Functions do Supabase CLI.
       
-      // Chamada à API real via Supabase Edge Functions (ou backend configurado)
-      // Substituir 'extract-invoice' pelo nome correto da função se necessário.
       const formData = new FormData();
       formData.append('file', selectedFile);
 
-      const { data, error } = await supabase.functions.invoke('extract-invoice', {
+      const response = await fetch('/api/process-invoice', {
+        method: 'POST',
         body: formData,
       });
 
-      if (error) throw error;
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Erro do servidor: ${response.status}`);
+      }
+
+      const data = await response.json();
       if (!data) throw new Error("A API não devolveu dados.");
 
       console.log("OCR Response:", data);
