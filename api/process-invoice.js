@@ -49,7 +49,7 @@ Não incluas blocos \`\`\`json ou outro texto fora deste JSON, apenas o próprio
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     
     // Limpar o prefixo "data:image/jpeg;base64," caso venha do frontend
-    const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+    const base64Data = imageBase64.replace(/^data:[a-zA-Z0-9\/+-]+;base64,/, "");
 
     const response = await fetch(geminiUrl, {
       method: "POST",

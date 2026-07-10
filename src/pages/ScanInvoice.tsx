@@ -155,7 +155,7 @@ export function ScanInvoice() {
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || `Erro do servidor: ${response.status}`);
+        throw new Error(errData.error ? (errData.details ? `${errData.error}\nDetalhes: ${errData.details}` : errData.error) : `Erro do servidor: ${response.status}`);
       }
 
       const data = await response.json();
