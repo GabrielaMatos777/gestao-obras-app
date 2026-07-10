@@ -126,20 +126,19 @@ export function ScanInvoice() {
     setIsScanning(true);
     setScanComplete(false);
     
-    // PROMPT IA FUTURO:
-    // "És um extrator de dados estrito, burro e exato. Extrai APENAS o texto verbatim que está impresso no documento. NÃO inventes dados, NÃO deduzas categorias, NÃO assumas valores que não estão claros. Se não conseguires ler, deixa em branco ou devolve null. A precisão absoluta e a cópia exata do texto são os teus únicos objetivos. Retorna os dados em formato JSON estrito."
+    // PROMPT DO SISTEMA DE OCR (BACKEND):
+    // "És um motor de OCR cego. A tua única função é a extração verbatim (cópia exata, letra a letra) do que está na imagem. NÃO normalizes nomes de produtos. NÃO inventes categorias. NÃO tentes corrigir a ortografia. Extrai as linhas de produtos e valores exatamente como estão impressos. Devolve a resposta em formato JSON puro."
+    
+    // TODO: Chamar API real de OCR aqui
     setTimeout(() => {
-      setFornecedor('Leroy Merlin');
-      setDataCompra(new Date().toISOString().split('T')[0]);
-      setValorTotal(145.50);
-      setItems([
-        { id: '1', originalText: 'CIMENTO PORTLAND 25KG SECIL', normalizedText: '', qty: 5, price: 6.50 },
-        { id: '2', originalText: 'TINTA INT MAT PLAST 15L BR', normalizedText: '', qty: 1, price: 113.00 },
-      ]);
+      setFornecedor('');
+      setDataCompra('');
+      setValorTotal('');
+      setItems([]); // Sem mock data. Se a API falhar/não existir, a lista fica vazia.
       setIsScanning(false);
       setScanComplete(true);
-      setShowOcrLines(false); // Escondido por defeito
-    }, 2500);
+      setShowOcrLines(true); // Exibir sempre o painel expansível/lista aberta
+    }, 1500);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -460,7 +459,7 @@ export function ScanInvoice() {
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <AlertCircle size={18} color="var(--warning)" />
-                  <strong>Ver/Editar Linhas da Fatura ({items.length})</strong>
+                  <strong>Ver/Editar Linhas da Fatura</strong>
                 </div>
                 {showOcrLines ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
               </button>
