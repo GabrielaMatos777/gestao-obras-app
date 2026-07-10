@@ -1,3 +1,5 @@
+import { GoogleGenAI } from '@google/genai';
+
 export const config = {
   api: {
     bodyParser: {
@@ -46,7 +48,6 @@ Devolve a resposta APENAS e EXCLUSIVAMENTE num formato JSON válido e puro com a
 }
 Não incluas blocos \`\`\`json ou outro texto fora deste JSON, apenas o próprio JSON. Se não conseguires ler, deixa em branco.`;
 
-    const { GoogleGenAI } = await import('@google/genai');
     const ai = new GoogleGenAI({ apiKey });
 
     // Limpar o prefixo "data:image/jpeg;base64," caso venha do frontend
