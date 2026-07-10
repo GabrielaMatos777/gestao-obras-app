@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { CheckCircle, AlertCircle, Save, Loader2, RefreshCw, Upload, PenLine, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { CheckCircle, AlertCircle, Save, Loader2, RefreshCw, Upload, Camera, ImageIcon, PenLine, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase, useAuth } from '../lib/supabase';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import type { Obra } from '../types/database';
@@ -87,6 +87,7 @@ export function ScanInvoice() {
   const [isAlocacaoExcecional, setIsAlocacaoExcecional] = useState(false);
   const [showOcrLines, setShowOcrLines] = useState(false);
 
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { isOnline, addToQueue } = useOfflineSync();
@@ -125,8 +126,8 @@ export function ScanInvoice() {
     setIsScanning(true);
     setScanComplete(false);
     
-    // PROMPT IA FUTURO: EXTRAÇÃO VERBATIM. 
-    // Instruções para o backend: "Extraia o texto EXATAMENTE como impresso no talão. Não deduza, resuma ou normalize. Se diz 'CIM. PORT. 25K', extraia 'CIM. PORT. 25K'."
+    // PROMPT IA FUTURO:
+    // "És um extrator de dados estrito, burro e exato. Extrai APENAS o texto verbatim que está impresso no documento. NÃO inventes dados, NÃO deduzas categorias, NÃO assumas valores que não estão claros. Se não conseguires ler, deixa em branco ou devolve null. A precisão absoluta e a cópia exata do texto são os teus únicos objetivos. Retorna os dados em formato JSON estrito."
     setTimeout(() => {
       setFornecedor('Leroy Merlin');
       setDataCompra(new Date().toISOString().split('T')[0]);
@@ -294,18 +295,26 @@ export function ScanInvoice() {
         </div>
       </header>
 
-      {/* Upload Simples OS-native (Sem capture="environment" forçado) */}
+      {/* Upload Separados (Câmara vs Galeria) */}
+      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFileChange} />
       <input ref={fileInputRef} type="file" accept="image/*, application/pdf" style={{ display: 'none' }} onChange={handleFileChange} />
 
       {!showForm && !isScanning && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center', marginTop: '2rem', maxWidth: '400px', margin: '2rem auto 0' }}>
           <button className="btn btn-primary glass-panel"
-            style={{ width: '100%', height: '80px', fontSize: '1.25rem', justifyContent: 'center', gap: '1rem' }}
-            onClick={() => fileInputRef.current?.click()}>
-            <Upload size={32} /> Carregar Fatura
+            style={{ width: '100%', height: '64px', fontSize: '1.125rem', justifyContent: 'center', gap: '1rem' }}
+            onClick={() => cameraInputRef.current?.click()}>
+            <Camera size={28} /> Tirar Foto
           </button>
-          <p style={{ color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.875rem' }}>
-            Tire foto ou escolha da galeria/PDF. A IA fará a leitura automática.
+          
+          <button className="btn glass-panel"
+            style={{ width: '100%', height: '64px', fontSize: '1.125rem', justifyContent: 'center', gap: '1rem', border: '1px solid var(--border-light)' }}
+            onClick={() => fileInputRef.current?.click()}>
+            <ImageIcon size={28} /> Escolher Ficheiro / Galeria
+          </button>
+          
+          <p style={{ color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.875rem', marginTop: '0.5rem' }}>
+            A IA fará a leitura automática dos dados originais da fatura.
           </p>
           
           <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '1rem', marginBottom: '1rem' }}>
