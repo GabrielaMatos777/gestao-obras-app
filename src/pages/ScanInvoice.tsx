@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Camera, CheckCircle, AlertCircle, Save, Loader2, RefreshCw, ImageIcon, FileText, PenLine, Plus, Trash2 } from 'lucide-react';
+import { CheckCircle, AlertCircle, Save, Loader2, RefreshCw, Upload, PenLine, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase, useAuth } from '../lib/supabase';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import type { Obra } from '../types/database';
@@ -12,9 +12,9 @@ type ExtractedItem = {
   price: number;
 };
 
-type Alocacao = {
+type AlocacaoExcecional = {
   obraId: string;
-  valor: string;
+  percentagem: string; // Guardado como string para facilitar input
 };
 
 const MOTIVOS_MANUAL = [
@@ -82,10 +82,12 @@ export function ScanInvoice() {
   const [scanComplete, setScanComplete] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isManual, setIsManual] = useState(false);
+  
+  // UI States
+  const [isAlocacaoExcecional, setIsAlocacaoExcecional] = useState(false);
+  const [showOcrLines, setShowOcrLines] = useState(false);
 
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const galleryInputRef = useRef<HTMLInputElement>(null);
-  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { isOnline, addToQueue } = useOfflineSync();
   const { session } = useAuth();
@@ -94,10 +96,11 @@ export function ScanInvoice() {
   const [knownProducts, setKnownProducts] = useState<string[]>([]);
 
   // Form State
-  const [alocacoes, setAlocacoes] = useState<Alocacao[]>([{ obraId: '', valor: '' }]);
+  const [obraPrincipalId, setObraPrincipalId] = useState('');
+  const [alocacoes, setAlocacoes] = useState<AlocacaoExcecional[]>([{ obraId: '', percentagem: '' }]);
   const [fornecedor, setFornecedor] = useState('');
   const [dataCompra, setDataCompra] = useState('');
-  const [valorTotal, setValorTotal] = useState(0);
+  const [valorTotal, setValorTotal] = useState<number | ''>('');
   const [motivoManual, setMotivoManual] = useState('');
   const [items, setItems] = useState<ExtractedItem[]>([]);
 
@@ -121,16 +124,20 @@ export function ScanInvoice() {
     }
     setIsScanning(true);
     setScanComplete(false);
+    
+    // PROMPT IA FUTURO: EXTRAÇÃO VERBATIM. 
+    // Instruções para o backend: "Extraia o texto EXATAMENTE como impresso no talão. Não deduza, resuma ou normalize. Se diz 'CIM. PORT. 25K', extraia 'CIM. PORT. 25K'."
     setTimeout(() => {
-      setFornecedor('Leroy Merlin (Lido por IA)');
+      setFornecedor('Leroy Merlin');
       setDataCompra(new Date().toISOString().split('T')[0]);
       setValorTotal(145.50);
       setItems([
-        { id: '1', originalText: 'CIMENTO PORTLAND 25KG', normalizedText: '', qty: 5, price: 6.50 },
+        { id: '1', originalText: 'CIMENTO PORTLAND 25KG SECIL', normalizedText: '', qty: 5, price: 6.50 },
         { id: '2', originalText: 'TINTA INT MAT PLAST 15L BR', normalizedText: '', qty: 1, price: 113.00 },
       ]);
       setIsScanning(false);
       setScanComplete(true);
+      setShowOcrLines(false); // Escondido por defeito
     }, 2500);
   };
 
@@ -144,41 +151,65 @@ export function ScanInvoice() {
     setPreview(null);
     setFornecedor('');
     setDataCompra(new Date().toISOString().split('T')[0]);
-    setValorTotal(0);
+    setValorTotal('');
     setMotivoManual('');
     setItems([]);
     setIsScanning(false);
     setScanComplete(true);
+    setShowOcrLines(true); // Se é manual, provavelmente quer inserir as linhas diretamente
   };
 
   const resetForm = () => {
     setFile(null); setPreview(null); setScanComplete(false);
-    setIsManual(false); setItems([]); setAlocacoes([{ obraId: '', valor: '' }]);
-    setFornecedor(''); setDataCompra(''); setValorTotal(0); setMotivoManual('');
+    setIsManual(false); setItems([]); setIsAlocacaoExcecional(false);
+    setObraPrincipalId(''); setAlocacoes([{ obraId: '', percentagem: '' }]);
+    setFornecedor(''); setDataCompra(''); setValorTotal(''); setMotivoManual('');
+    setShowOcrLines(false);
   };
 
-  const addAlocacao = () => setAlocacoes(prev => [...prev, { obraId: '', valor: '' }]);
+  const addAlocacao = () => setAlocacoes(prev => [...prev, { obraId: '', percentagem: '' }]);
   const removeAlocacao = (idx: number) => setAlocacoes(prev => prev.filter((_, i) => i !== idx));
-  const updateAlocacao = (idx: number, field: 'obraId' | 'valor', value: string) => {
+  const updateAlocacao = (idx: number, field: 'obraId' | 'percentagem', value: string) => {
     setAlocacoes(prev => prev.map((a, i) => i === idx ? { ...a, [field]: value } : a));
+  };
+  
+  const addManualItem = () => {
+    setItems(prev => [...prev, { id: Math.random().toString(), originalText: '', normalizedText: '', qty: 1, price: 0 }]);
+  };
+  const removeManualItem = (id: string) => {
+    setItems(prev => prev.filter(i => i.id !== id));
   };
 
   const handleSave = async () => {
     if (!session?.user) return;
+    
+    const vTotal = Number(valorTotal);
+    if (!vTotal || vTotal <= 0) { alert('Insira um valor total válido.'); return; }
 
-    const validAlocacoes = alocacoes.filter(a => a.obraId && a.valor);
-    if (validAlocacoes.length === 0) { alert('Por favor, selecione pelo menos uma Obra e valor.'); return; }
+    let alocacoesFinais: {obraId: string, valor: number}[] = [];
+
+    if (isAlocacaoExcecional) {
+      const validAloc = alocacoes.filter(a => a.obraId && a.percentagem);
+      if (validAloc.length === 0) { alert('Selecione pelo menos uma Obra e percentagem.'); return; }
+      
+      const totalPercent = validAloc.reduce((sum, a) => sum + parseFloat(a.percentagem || '0'), 0);
+      if (Math.abs(totalPercent - 100) > 0.1) { // margem pequena para decimais
+        alert(`A soma das percentagens deve ser exatamente 100%. Atualmente é ${totalPercent}%.`);
+        return;
+      }
+      alocacoesFinais = validAloc.map(a => ({
+        obraId: a.obraId,
+        valor: (parseFloat(a.percentagem) / 100) * vTotal
+      }));
+    } else {
+      if (!obraPrincipalId) { alert('Selecione a Obra de destino.'); return; }
+      alocacoesFinais = [{ obraId: obraPrincipalId, valor: vTotal }];
+    }
 
     if (isManual && !motivoManual) { alert('Por favor, selecione um Motivo de Inserção Manual.'); return; }
 
     const unnormalized = items.find(i => !i.normalizedText.trim());
-    if (unnormalized) { alert('Todos os produtos devem ser normalizados.'); return; }
-
-    const totalAlocado = validAlocacoes.reduce((sum, a) => sum + parseFloat(a.valor || '0'), 0);
-    if (totalAlocado > valorTotal + 0.01) {
-      alert(`A soma das alocações (${totalAlocado.toFixed(2)}€) não pode ser superior ao valor total da fatura (${valorTotal.toFixed(2)}€).`);
-      return;
-    }
+    if (unnormalized) { alert('Todos os produtos devem ter o nome normalizado.'); return; }
 
     setSaving(true);
     let foto_url = null;
@@ -195,14 +226,14 @@ export function ScanInvoice() {
           foto_url = data.publicUrl;
         }
 
-        // Insert fatura with first obra_id as primary reference
+        // Insert fatura (obra_id keeps the primary reference, even if split, just for simplicity in basic views)
         const { data: faturaData, error: faturaError } = await supabase
           .from('faturas')
           .insert({
-            obra_id: validAlocacoes[0].obraId,
+            obra_id: alocacoesFinais[0].obraId, 
             fornecedor,
             data_compra: dataCompra,
-            valor_total: valorTotal,
+            valor_total: vTotal,
             foto_url,
             motivo_manual: isManual ? motivoManual : null,
             registado_por: session.user.id
@@ -213,22 +244,24 @@ export function ScanInvoice() {
         if (faturaError) throw faturaError;
 
         // Insert all allocations
-        const alocacoesData = validAlocacoes.map(a => ({
+        const alocacoesData = alocacoesFinais.map(a => ({
           fatura_id: faturaData.id,
           obra_id: a.obraId,
-          valor_alocado: parseFloat(a.valor)
+          valor_alocado: a.valor
         }));
         const { error: alocErr } = await supabase.from('fatura_alocacoes').insert(alocacoesData);
         if (alocErr) throw alocErr;
 
-        // Insert materials (linked to first obra for now)
+        // Insert materials (linked to fatura, not directly to single obra anymore to simplify)
         if (items.length > 0) {
           const materiaisToInsert = items.map(item => ({
             fatura_id: faturaData.id,
-            texto_original_fatura: item.originalText,
+            obra_id: alocacoesFinais[0].obraId, // Retro-compatibilidade (idealmente a db devia perder o NOT NULL aqui tbm)
+            texto_original_fatura: item.originalText || item.normalizedText,
             produto_normalizado: item.normalizedText,
             quantidade: item.qty,
-            preco_unitario: item.price
+            preco_unitario: item.price,
+            preco_total_item: item.qty * item.price
           }));
           const { error: matsError } = await supabase.from('materiais_comprados').insert(materiaisToInsert);
           if (matsError) throw matsError;
@@ -243,7 +276,7 @@ export function ScanInvoice() {
         setSaving(false);
       }
     } else {
-      addToQueue({ alocacoes: validAlocacoes, fornecedor, dataCompra, valorTotal, items });
+      addToQueue({ alocacoes: alocacoesFinais, fornecedor, dataCompra, valorTotal: vTotal, items });
       alert('Fatura guardada offline. Será sincronizada quando houver rede.');
       setSaving(false);
       resetForm();
@@ -261,39 +294,29 @@ export function ScanInvoice() {
         </div>
       </header>
 
-      {/* Hidden file inputs */}
-      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFileChange} />
-      <input ref={galleryInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
-      <input ref={pdfInputRef} type="file" accept="application/pdf" style={{ display: 'none' }} onChange={handleFileChange} />
+      {/* Upload Simples OS-native (Sem capture="environment" forçado) */}
+      <input ref={fileInputRef} type="file" accept="image/*, application/pdf" style={{ display: 'none' }} onChange={handleFileChange} />
 
       {!showForm && !isScanning && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center', marginTop: '2rem', maxWidth: '400px', margin: '2rem auto 0' }}>
           <button className="btn btn-primary glass-panel"
-            style={{ width: '100%', height: '64px', fontSize: '1.125rem', justifyContent: 'flex-start', gap: '1rem', paddingLeft: '1.5rem' }}
-            onClick={() => cameraInputRef.current?.click()}>
-            <Camera size={28} /> Tirar Fotografia
+            style={{ width: '100%', height: '80px', fontSize: '1.25rem', justifyContent: 'center', gap: '1rem' }}
+            onClick={() => fileInputRef.current?.click()}>
+            <Upload size={32} /> Carregar Fatura
           </button>
-          <button className="btn glass-panel"
-            style={{ width: '100%', height: '64px', fontSize: '1.125rem', justifyContent: 'flex-start', gap: '1rem', paddingLeft: '1.5rem', border: '1px solid var(--border-light)' }}
-            onClick={() => galleryInputRef.current?.click()}>
-            <ImageIcon size={28} /> Escolher da Galeria
-          </button>
-          <button className="btn glass-panel"
-            style={{ width: '100%', height: '64px', fontSize: '1.125rem', justifyContent: 'flex-start', gap: '1rem', paddingLeft: '1.5rem', border: '1px solid var(--border-light)' }}
-            onClick={() => pdfInputRef.current?.click()}>
-            <FileText size={28} /> Carregar PDF
-          </button>
-          <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+          <p style={{ color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.875rem' }}>
+            Tire foto ou escolha da galeria/PDF. A IA fará a leitura automática.
+          </p>
+          
+          <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '1rem', marginBottom: '1rem' }}>
             <hr style={{ flex: 1, borderColor: 'var(--border-light)' }} /> ou <hr style={{ flex: 1, borderColor: 'var(--border-light)' }} />
           </div>
+          
           <button className="btn glass-panel"
-            style={{ width: '100%', height: '64px', fontSize: '1.125rem', justifyContent: 'flex-start', gap: '1rem', paddingLeft: '1.5rem', border: '1px solid var(--warning)', color: 'var(--warning)' }}
+            style={{ width: '100%', height: '64px', fontSize: '1.125rem', justifyContent: 'center', gap: '1rem', border: '1px solid var(--warning)', color: 'var(--warning)' }}
             onClick={handleManualEntry}>
-            <PenLine size={28} /> Inserir Manualmente
+            <PenLine size={24} /> Inserir Manualmente
           </button>
-          <p style={{ color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.875rem', marginTop: '0.5rem' }}>
-            A IA processará a imagem automaticamente.
-          </p>
         </div>
       )}
 
@@ -311,7 +334,7 @@ export function ScanInvoice() {
           {preview && (
             <div className="card glass-panel" style={{ padding: '1rem', display: 'flex', flexDirection: 'column' }}>
               <h3 style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between' }}>
-                Imagem Capturada
+                Imagem
                 <button className="btn-icon" onClick={resetForm} style={{ padding: '0.25rem' }} disabled={saving}><RefreshCw size={20} /></button>
               </h3>
               <div style={{ flex: 1, backgroundColor: 'var(--bg-base)', borderRadius: 'var(--radius-md)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -344,65 +367,110 @@ export function ScanInvoice() {
 
             {/* Header fields */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Total Fatura (€) <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <input type="number" step="0.01" className="form-control" style={{ fontSize: '1.25rem', fontWeight: 'bold' }} value={valorTotal} onChange={e => setValorTotal(e.target.value ? Number(e.target.value) : '')} disabled={saving} /></div>
               <div className="form-group"><label className="form-label">Fornecedor</label>
                 <input type="text" className="form-control" value={fornecedor} onChange={e => setFornecedor(e.target.value)} disabled={saving} /></div>
               <div className="form-group"><label className="form-label">Data</label>
                 <input type="date" className="form-control" value={dataCompra} onChange={e => setDataCompra(e.target.value)} disabled={saving} /></div>
-              <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Total Fatura (€)</label>
-                <input type="number" step="0.01" className="form-control" value={valorTotal} onChange={e => setValorTotal(Number(e.target.value))} disabled={saving} /></div>
             </div>
+            
+            <hr style={{ borderColor: 'var(--border-light)', margin: '1rem 0' }} />
 
-            {/* Alocações por Obra */}
-            <div style={{ marginTop: '1rem', marginBottom: '1rem' }}>
-              <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                Alocação por Obra(s) <span style={{ color: 'var(--danger)' }}>*</span>
-                <button type="button" className="btn" style={{ fontSize: '0.75rem', padding: '0.25rem 0.75rem' }} onClick={addAlocacao}>
-                  <Plus size={14} /> Adicionar Obra
-                </button>
-              </label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {alocacoes.map((aloc, idx) => (
-                  <div key={idx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <select className="form-control" value={aloc.obraId} onChange={e => updateAlocacao(idx, 'obraId', e.target.value)} disabled={saving} style={{ flex: 2 }}>
-                      <option value="">Selecione obra...</option>
-                      {obras.map(o => <option key={o.id} value={o.id}>{o.nome_obra}</option>)}
-                    </select>
-                    <input type="number" step="0.01" className="form-control" placeholder="€" value={aloc.valor}
-                      onChange={e => updateAlocacao(idx, 'valor', e.target.value)} disabled={saving} style={{ flex: 1 }} />
-                    {alocacoes.length > 1 && (
-                      <button type="button" className="btn-icon" onClick={() => removeAlocacao(idx)} disabled={saving} style={{ color: 'var(--danger)', flexShrink: 0 }}>
-                        <Trash2 size={18} />
-                      </button>
-                    )}
+            {/* Alocação Limpa */}
+            <div style={{ marginBottom: '1rem' }}>
+              {!isAlocacaoExcecional ? (
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Obra de Destino <span style={{ color: 'var(--danger)' }}>*</span></span>
+                    <button type="button" className="btn" style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem', background: 'transparent', border: 'none', textDecoration: 'underline' }} 
+                            onClick={() => setIsAlocacaoExcecional(true)}>
+                      Alocação Excecional
+                    </button>
+                  </label>
+                  <select className="form-control" value={obraPrincipalId} onChange={e => setObraPrincipalId(e.target.value)} disabled={saving}>
+                    <option value="">Selecione obra (100%)...</option>
+                    {obras.map(o => <option key={o.id} value={o.id}>{o.nome_obra}</option>)}
+                  </select>
+                </div>
+              ) : (
+                <div style={{ backgroundColor: 'var(--bg-base)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-light)' }}>
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Alocação Múltipla (%)</span>
+                    <button type="button" className="btn" style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem', background: 'transparent', border: 'none', textDecoration: 'underline' }} 
+                            onClick={() => { setIsAlocacaoExcecional(false); setAlocacoes([{ obraId: '', percentagem: '' }]); }}>
+                      Cancelar divisão
+                    </button>
+                  </label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {alocacoes.map((aloc, idx) => (
+                      <div key={idx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <select className="form-control" value={aloc.obraId} onChange={e => updateAlocacao(idx, 'obraId', e.target.value)} disabled={saving} style={{ flex: 2 }}>
+                          <option value="">Obra...</option>
+                          {obras.map(o => <option key={o.id} value={o.id}>{o.nome_obra}</option>)}
+                        </select>
+                        <div style={{ position: 'relative', flex: 1 }}>
+                          <input type="number" step="1" className="form-control" placeholder="%" value={aloc.percentagem}
+                            onChange={e => updateAlocacao(idx, 'percentagem', e.target.value)} disabled={saving} />
+                          <span style={{ position: 'absolute', right: '10px', top: '14px', color: 'var(--text-muted)' }}>%</span>
+                        </div>
+                        {alocacoes.length > 1 && (
+                          <button type="button" className="btn-icon" onClick={() => removeAlocacao(idx)} disabled={saving} style={{ color: 'var(--danger)', flexShrink: 0 }}>
+                            <Trash2 size={18} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              {alocacoes.length > 1 && (
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-                  Total alocado: {alocacoes.reduce((s, a) => s + parseFloat(a.valor || '0'), 0).toFixed(2)}€ / {valorTotal.toFixed(2)}€
-                </p>
+                  <button type="button" className="btn" style={{ fontSize: '0.875rem', padding: '0.5rem', marginTop: '0.5rem', width: '100%', justifyContent: 'center' }} onClick={addAlocacao}>
+                    <Plus size={16} /> Adicionar Obra
+                  </button>
+                  
+                  {alocacoes.length > 0 && (
+                    <div style={{ 
+                      marginTop: '1rem', padding: '0.5rem', borderRadius: 'var(--radius-sm)', textAlign: 'center', fontSize: '0.875rem',
+                      backgroundColor: alocacoes.reduce((s, a) => s + parseFloat(a.percentagem || '0'), 0) === 100 ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                      color: alocacoes.reduce((s, a) => s + parseFloat(a.percentagem || '0'), 0) === 100 ? 'var(--success)' : 'var(--danger)'
+                     }}>
+                      Soma: {alocacoes.reduce((s, a) => s + parseFloat(a.percentagem || '0'), 0)}% (deve ser 100%)
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
             <hr style={{ borderColor: 'var(--border-light)', margin: '1.5rem 0' }} />
 
-            {/* Items / Normalização */}
-            {items.length > 0 && (
-              <>
-                <h4 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {/* Acordeão de Items OCR totalmente editáveis */}
+            <div>
+              <button 
+                type="button" 
+                className="btn glass-panel" 
+                style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', border: '1px solid var(--border-light)' }}
+                onClick={() => setShowOcrLines(!showOcrLines)}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <AlertCircle size={18} color="var(--warning)" />
-                  Normalização dos Produtos
-                </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginBottom: '2rem' }}>
+                  <strong>Ver/Editar Linhas da Fatura ({items.length})</strong>
+                </div>
+                {showOcrLines ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+              </button>
+
+              {showOcrLines && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginTop: '1rem' }}>
                   {items.map((item) => (
-                    <div key={item.id} style={{ padding: '1rem', backgroundColor: 'var(--bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-focus)' }}>
-                      <div style={{ marginBottom: '0.75rem', fontSize: '0.875rem' }}>
-                        Texto Lido: <strong style={{ color: 'var(--text-secondary)' }}>{item.originalText}</strong>
+                    <div key={item.id} style={{ padding: '1rem', backgroundColor: 'var(--bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-focus)', position: 'relative' }}>
+                      <button className="btn-icon" style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', color: 'var(--danger)', padding: '0.25rem' }} onClick={() => removeManualItem(item.id)}>
+                         <Trash2 size={16} />
+                      </button>
+                      <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                        <label className="form-label" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Texto Extraído (Verbatim)</label>
+                        <input type="text" className="form-control" value={item.originalText} onChange={e => setItems(items.map(i => i.id === item.id ? { ...i, originalText: e.target.value } : i))} disabled={saving} placeholder="Ex: CIM. PORT. 25KG" style={{ fontSize: '0.875rem' }} />
                       </div>
                       <div className="form-group" style={{ marginBottom: '0.75rem' }}>
-                        <label className="form-label">Produto Normalizado <span style={{ color: 'var(--danger)' }}>*</span></label>
+                        <label className="form-label">Nome Normalizado <span style={{ color: 'var(--danger)' }}>*</span></label>
                         <Autocomplete value={item.normalizedText} onChange={(val) => setItems(items.map(i => i.id === item.id ? { ...i, normalizedText: val } : i))}
-                          options={knownProducts} placeholder="Pesquise ou escreva o nome..." />
+                          options={knownProducts} placeholder="Ex: Cimento 25kg" />
                       </div>
                       <div style={{ display: 'flex', gap: '1rem' }}>
                         <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
@@ -410,17 +478,20 @@ export function ScanInvoice() {
                           <input type="number" className="form-control" value={item.qty} onChange={e => setItems(items.map(i => i.id === item.id ? { ...i, qty: Number(e.target.value) } : i))} disabled={saving} />
                         </div>
                         <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-                          <label className="form-label">Preço (€)</label>
+                          <label className="form-label">Preço Unit. (€)</label>
                           <input type="number" step="0.01" className="form-control" value={item.price} onChange={e => setItems(items.map(i => i.id === item.id ? { ...i, price: Number(e.target.value) } : i))} disabled={saving} />
                         </div>
                       </div>
                     </div>
                   ))}
+                  <button type="button" className="btn" style={{ width: '100%', justifyContent: 'center' }} onClick={addManualItem}>
+                    <Plus size={18} /> Adicionar Linha Manulamente
+                  </button>
                 </div>
-              </>
-            )}
+              )}
+            </div>
 
-            <button className="btn btn-primary" style={{ width: '100%', minHeight: '60px', fontSize: '1.125rem' }} onClick={handleSave} disabled={saving}>
+            <button className="btn btn-primary" style={{ width: '100%', minHeight: '60px', fontSize: '1.125rem', marginTop: '2rem' }} onClick={handleSave} disabled={saving}>
               {saving ? <Loader2 style={{ animation: 'spin 1s linear infinite' }} size={24} /> : <Save size={24} />}
               {saving ? 'A gravar...' : 'Gravar Fatura'}
             </button>
