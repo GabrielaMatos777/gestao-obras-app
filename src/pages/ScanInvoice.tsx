@@ -134,12 +134,23 @@ export function ScanInvoice() {
       // A lógica agora vive em /api/process-invoice (Vercel Serverless Function)
       // para garantir que o deploy não requer Edge Functions do Supabase CLI.
       
-      const formData = new FormData();
-      formData.append('file', selectedFile);
+      // Converter ficheiro para Base64
+      const base64String = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(selectedFile);
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = error => reject(error);
+      });
 
       const response = await fetch('/api/process-invoice', {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageBase64: base64String,
+          mimeType: selectedFile.type,
+        }),
       });
 
       if (!response.ok) {
