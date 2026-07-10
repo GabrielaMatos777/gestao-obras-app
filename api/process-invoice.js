@@ -52,26 +52,56 @@ Não incluas blocos \`\`\`json ou outro texto fora deste JSON, apenas o próprio
     // Limpar o prefixo "data:image/jpeg;base64," caso venha do frontend
     const base64Data = imageBase64.replace(/^data:[a-zA-Z0-9\/+-]+;base64,/, "");
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: systemPrompt },
+    const fallbackModels = [
+      'gemini-1.5-flash-latest',
+      'gemini-1.5-flash',
+      'gemini-2.5-flash',
+      'gemini-1.5-pro-latest',
+      'gemini-1.5-pro',
+      'gemini-1.0-pro-vision-latest',
+      'gemini-pro-vision'
+    ];
+
+    let response;
+    let success = false;
+    let lastErrorDetails = "";
+
+    for (const modelName of fallbackModels) {
+      try {
+        console.log(`A tentar usar o modelo Gemini: ${modelName}`);
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents: [
             {
-              inlineData: {
-                data: base64Data,
-                mimeType: mimeType || "image/jpeg"
-              }
+              role: 'user',
+              parts: [
+                { text: systemPrompt },
+                {
+                  inlineData: {
+                    data: base64Data,
+                    mimeType: mimeType || "image/jpeg"
+                  }
+                }
+              ]
             }
-          ]
-        }
-      ],
-      config: {
-        temperature: 0.0,
+          ],
+          config: {
+            temperature: 0.0,
+          }
+        });
+        success = true;
+        console.log(`Sucesso com o modelo: ${modelName}`);
+        break; // Sai do loop se tiver sucesso
+      } catch (err) {
+        console.warn(`Falha no modelo ${modelName}:`, err.message);
+        lastErrorDetails = err.message;
+        // Continua para o próximo modelo da lista
       }
-    });
+    }
+
+    if (!success) {
+      throw new Error(`Nenhum modelo suportado pela sua chave API funcionou. Último erro: ${lastErrorDetails}`);
+    }
 
     let extractedText = response.text;
     
