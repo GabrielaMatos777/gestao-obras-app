@@ -4,6 +4,7 @@ export const config = {
       sizeLimit: '10mb', // Permitir imagens até 10MB
     },
   },
+  regions: ['iad1'], // Forçar região dos EUA (Washington) para evitar bloqueios regionais da API Google na Europa
 };
 
 export default async function handler(req, res) {
@@ -13,7 +14,7 @@ export default async function handler(req, res) {
 
   try {
     // Validação estrita da chave de ambiente
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = (process.env.GEMINI_API_KEY || '').trim();
     
     if (!apiKey) {
       return res.status(500).json({ 
