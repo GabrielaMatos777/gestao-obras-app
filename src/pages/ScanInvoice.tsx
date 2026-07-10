@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Camera, CheckCircle, AlertCircle, Save, Loader2, RefreshCw } from 'lucide-react';
+import { Camera, CheckCircle, AlertCircle, Save, Loader2, RefreshCw, ImageIcon, FileText, PenLine, Plus, Trash2 } from 'lucide-react';
 import { supabase, useAuth } from '../lib/supabase';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import type { Obra } from '../types/database';
@@ -12,15 +12,26 @@ type ExtractedItem = {
   price: number;
 };
 
+type Alocacao = {
+  obraId: string;
+  valor: string;
+};
+
+const MOTIVOS_MANUAL = [
+  'Fatura Extraviada',
+  'Documento Ilegível',
+  'Fatura em Papel (não digitalizável)',
+  'Compra Verbal / Sem Fatura',
+  'Outro',
+];
+
 // Custom Autocomplete Component
 function Autocomplete({ value, onChange, options, placeholder }: { value: string, onChange: (val: string) => void, options: string[], placeholder: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const [filter, setFilter] = useState(value);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    setFilter(value);
-  }, [value]);
+  useEffect(() => { setFilter(value); }, [value]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -42,40 +53,19 @@ function Autocomplete({ value, onChange, options, placeholder }: { value: string
         placeholder={placeholder}
         value={filter}
         onFocus={() => setIsOpen(true)}
-        onChange={(e) => {
-          setFilter(e.target.value);
-          onChange(e.target.value);
-          setIsOpen(true);
-        }}
+        onChange={(e) => { setFilter(e.target.value); onChange(e.target.value); setIsOpen(true); }}
         style={{ borderColor: filter ? 'var(--border-light)' : 'var(--warning)', minHeight: '48px' }}
       />
       {isOpen && filteredOptions.length > 0 && (
         <ul style={{
-          position: 'absolute',
-          top: '100%',
-          left: 0,
-          right: 0,
-          zIndex: 10,
-          background: 'var(--bg-surface-elevated)',
-          border: '1px solid var(--border-light)',
-          borderRadius: 'var(--radius-md)',
-          maxHeight: '200px',
-          overflowY: 'auto',
-          listStyle: 'none',
-          padding: 0,
-          marginTop: '4px',
-          boxShadow: 'var(--shadow-lg)'
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
+          background: 'var(--bg-surface-elevated)', border: '1px solid var(--border-light)',
+          borderRadius: 'var(--radius-md)', maxHeight: '200px', overflowY: 'auto',
+          listStyle: 'none', padding: 0, marginTop: '4px', boxShadow: 'var(--shadow-lg)'
         }}>
           {filteredOptions.map((opt) => (
-            <li
-              key={opt}
-              style={{ padding: '0.75rem 1rem', cursor: 'pointer', borderBottom: '1px solid var(--border-light)' }}
-              onClick={() => {
-                onChange(opt);
-                setFilter(opt);
-                setIsOpen(false);
-              }}
-            >
+            <li key={opt} style={{ padding: '0.75rem 1rem', cursor: 'pointer', borderBottom: '1px solid var(--border-light)' }}
+              onClick={() => { onChange(opt); setFilter(opt); setIsOpen(false); }}>
               {opt}
             </li>
           ))}
@@ -91,101 +81,130 @@ export function ScanInvoice() {
   const [isScanning, setIsScanning] = useState(false);
   const [scanComplete, setScanComplete] = useState(false);
   const [saving, setSaving] = useState(false);
-  
+  const [isManual, setIsManual] = useState(false);
+
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+
   const { isOnline, addToQueue } = useOfflineSync();
   const { session } = useAuth();
 
-  // Reference Data
   const [obras, setObras] = useState<Obra[]>([]);
   const [knownProducts, setKnownProducts] = useState<string[]>([]);
 
   // Form State
-  const [obraId, setObraId] = useState('');
+  const [alocacoes, setAlocacoes] = useState<Alocacao[]>([{ obraId: '', valor: '' }]);
   const [fornecedor, setFornecedor] = useState('');
   const [dataCompra, setDataCompra] = useState('');
   const [valorTotal, setValorTotal] = useState(0);
+  const [motivoManual, setMotivoManual] = useState('');
   const [items, setItems] = useState<ExtractedItem[]>([]);
 
   useEffect(() => {
     async function loadReferences() {
       const { data: obrasData } = await supabase.from('obras').select('*').eq('estado', 'ativa');
       if (obrasData) setObras(obrasData);
-
       const { data: matsData } = await supabase.from('materiais_comprados').select('produto_normalizado');
-      if (matsData) setKnownProducts(Array.from(new Set(matsData.map(m => m.produto_normalizado))));
+      if (matsData) setKnownProducts(Array.from(new Set(matsData.map((m: any) => m.produto_normalizado).filter(Boolean))));
     }
     loadReferences();
   }, []);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const selectedFile = e.target.files[0];
-      setFile(selectedFile);
+  const processFile = (selectedFile: File) => {
+    setFile(selectedFile);
+    setIsManual(false);
+    if (selectedFile.type === 'application/pdf') {
+      setPreview(null);
+    } else {
       setPreview(URL.createObjectURL(selectedFile));
-      
-      setIsScanning(true);
-      setScanComplete(false);
-      
-      // Simular OCR com IA
-      setTimeout(() => {
-        setFornecedor('Leroy Merlin (Lido por IA)');
-        setDataCompra(new Date().toISOString().split('T')[0]);
-        setValorTotal(145.50);
-        setItems([
-          { id: '1', originalText: 'CIMENTO PORTLAND 25KG', normalizedText: '', qty: 5, price: 6.50 },
-          { id: '2', originalText: 'TINTA INT MAT PLAST 15L BR', normalizedText: '', qty: 1, price: 113.00 },
-        ]);
-        setIsScanning(false);
-        setScanComplete(true);
-      }, 2500);
     }
+    setIsScanning(true);
+    setScanComplete(false);
+    setTimeout(() => {
+      setFornecedor('Leroy Merlin (Lido por IA)');
+      setDataCompra(new Date().toISOString().split('T')[0]);
+      setValorTotal(145.50);
+      setItems([
+        { id: '1', originalText: 'CIMENTO PORTLAND 25KG', normalizedText: '', qty: 5, price: 6.50 },
+        { id: '2', originalText: 'TINTA INT MAT PLAST 15L BR', normalizedText: '', qty: 1, price: 113.00 },
+      ]);
+      setIsScanning(false);
+      setScanComplete(true);
+    }, 2500);
   };
 
-  const handleItemNormalizationChange = (id: string, value: string) => {
-    setItems(prev => prev.map(item => item.id === id ? { ...item, normalizedText: value } : item));
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) processFile(e.target.files[0]);
+  };
+
+  const handleManualEntry = () => {
+    setIsManual(true);
+    setFile(null);
+    setPreview(null);
+    setFornecedor('');
+    setDataCompra(new Date().toISOString().split('T')[0]);
+    setValorTotal(0);
+    setMotivoManual('');
+    setItems([]);
+    setIsScanning(false);
+    setScanComplete(true);
+  };
+
+  const resetForm = () => {
+    setFile(null); setPreview(null); setScanComplete(false);
+    setIsManual(false); setItems([]); setAlocacoes([{ obraId: '', valor: '' }]);
+    setFornecedor(''); setDataCompra(''); setValorTotal(0); setMotivoManual('');
+  };
+
+  const addAlocacao = () => setAlocacoes(prev => [...prev, { obraId: '', valor: '' }]);
+  const removeAlocacao = (idx: number) => setAlocacoes(prev => prev.filter((_, i) => i !== idx));
+  const updateAlocacao = (idx: number, field: 'obraId' | 'valor', value: string) => {
+    setAlocacoes(prev => prev.map((a, i) => i === idx ? { ...a, [field]: value } : a));
   };
 
   const handleSave = async () => {
-    if (!obraId || !session?.user) {
-      alert("Por favor, selecione uma Obra.");
-      return;
-    }
+    if (!session?.user) return;
+
+    const validAlocacoes = alocacoes.filter(a => a.obraId && a.valor);
+    if (validAlocacoes.length === 0) { alert('Por favor, selecione pelo menos uma Obra e valor.'); return; }
+
+    if (isManual && !motivoManual) { alert('Por favor, selecione um Motivo de Inserção Manual.'); return; }
+
     const unnormalized = items.find(i => !i.normalizedText.trim());
-    if (unnormalized) {
-      alert("Todos os produtos devem ser normalizados.");
+    if (unnormalized) { alert('Todos os produtos devem ser normalizados.'); return; }
+
+    const totalAlocado = validAlocacoes.reduce((sum, a) => sum + parseFloat(a.valor || '0'), 0);
+    if (totalAlocado > valorTotal + 0.01) {
+      alert(`A soma das alocações (${totalAlocado.toFixed(2)}€) não pode ser superior ao valor total da fatura (${valorTotal.toFixed(2)}€).`);
       return;
     }
-    
+
     setSaving(true);
     let foto_url = null;
 
     if (isOnline) {
       try {
-        // 1. Upload File
         if (file) {
           const fileExt = file.name.split('.').pop();
           const fileName = `${Math.random()}.${fileExt}`;
           const filePath = `${session.user.id}/${fileName}`;
-          
-          const { error: uploadError } = await supabase.storage
-            .from('faturas')
-            .upload(filePath, file);
-
+          const { error: uploadError } = await supabase.storage.from('faturas').upload(filePath, file);
           if (uploadError) throw uploadError;
-          
           const { data } = supabase.storage.from('faturas').getPublicUrl(filePath);
           foto_url = data.publicUrl;
         }
 
-        // 2. Insert Header
+        // Insert fatura with first obra_id as primary reference
         const { data: faturaData, error: faturaError } = await supabase
           .from('faturas')
           .insert({
-            obra_id: obraId,
+            obra_id: validAlocacoes[0].obraId,
             fornecedor,
             data_compra: dataCompra,
             valor_total: valorTotal,
             foto_url,
+            motivo_manual: isManual ? motivoManual : null,
             registado_por: session.user.id
           })
           .select()
@@ -193,152 +212,218 @@ export function ScanInvoice() {
 
         if (faturaError) throw faturaError;
 
-        // 3. Insert Items
-        const materiaisToInsert = items.map(item => ({
+        // Insert all allocations
+        const alocacoesData = validAlocacoes.map(a => ({
           fatura_id: faturaData.id,
-          texto_original_fatura: item.originalText,
-          produto_normalizado: item.normalizedText,
-          quantidade: item.qty,
-          preco_unitario: item.price
+          obra_id: a.obraId,
+          valor_alocado: parseFloat(a.valor)
         }));
+        const { error: alocErr } = await supabase.from('fatura_alocacoes').insert(alocacoesData);
+        if (alocErr) throw alocErr;
 
-        const { error: matsError } = await supabase.from('materiais_comprados').insert(materiaisToInsert);
-        
-        if (matsError) throw matsError;
+        // Insert materials (linked to first obra for now)
+        if (items.length > 0) {
+          const materiaisToInsert = items.map(item => ({
+            fatura_id: faturaData.id,
+            texto_original_fatura: item.originalText,
+            produto_normalizado: item.normalizedText,
+            quantidade: item.qty,
+            preco_unitario: item.price
+          }));
+          const { error: matsError } = await supabase.from('materiais_comprados').insert(materiaisToInsert);
+          if (matsError) throw matsError;
+        }
 
-        alert("Fatura guardada com sucesso!");
+        alert('Fatura guardada com sucesso!');
+        resetForm();
 
       } catch (err: any) {
-        alert("Erro a guardar: " + err.message);
+        alert('Erro a guardar: ' + err.message);
       } finally {
         setSaving(false);
       }
     } else {
-      // Offline fallback
-      addToQueue({ obraId, fornecedor, dataCompra, valorTotal, items });
-      alert("Fatura guardada offline. Será sincronizada quando houver rede.");
+      addToQueue({ alocacoes: validAlocacoes, fornecedor, dataCompra, valorTotal, items });
+      alert('Fatura guardada offline. Será sincronizada quando houver rede.');
       setSaving(false);
-    }
-    
-    // Reset Form
-    if (!saving) {
-      setFile(null);
-      setPreview(null);
-      setScanComplete(false);
-      setItems([]);
+      resetForm();
     }
   };
+
+  const showForm = scanComplete || (isManual && scanComplete);
 
   return (
     <div className="animate-fade-in" style={{ paddingBottom: '2rem' }}>
       <header className="page-header">
         <div>
           <h1 className="text-gradient">Nova Despesa</h1>
-          <p>Scan ou foto no local</p>
+          <p>Scan ou inserção manual</p>
         </div>
       </header>
 
-      {!preview && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem', alignItems: 'center', marginTop: '2rem' }}>
-          <label 
-            className="btn btn-primary glass-panel" 
-            style={{ 
-              width: '200px', height: '200px', borderRadius: '50%', 
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 10px 40px rgba(59, 130, 246, 0.4)', gap: '1rem', cursor: 'pointer'
-            }}
-          >
-            <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFileUpload} />
-            <Camera size={64} />
-            <span style={{ fontSize: '1.25rem', fontWeight: 600 }}>Tirar Foto</span>
-          </label>
-          <p style={{ color: 'var(--text-secondary)' }}>A IA processará a imagem imediatamente.</p>
+      {/* Hidden file inputs */}
+      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFileChange} />
+      <input ref={galleryInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
+      <input ref={pdfInputRef} type="file" accept="application/pdf" style={{ display: 'none' }} onChange={handleFileChange} />
+
+      {!showForm && !isScanning && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center', marginTop: '2rem', maxWidth: '400px', margin: '2rem auto 0' }}>
+          <button className="btn btn-primary glass-panel"
+            style={{ width: '100%', height: '64px', fontSize: '1.125rem', justifyContent: 'flex-start', gap: '1rem', paddingLeft: '1.5rem' }}
+            onClick={() => cameraInputRef.current?.click()}>
+            <Camera size={28} /> Tirar Fotografia
+          </button>
+          <button className="btn glass-panel"
+            style={{ width: '100%', height: '64px', fontSize: '1.125rem', justifyContent: 'flex-start', gap: '1rem', paddingLeft: '1.5rem', border: '1px solid var(--border-light)' }}
+            onClick={() => galleryInputRef.current?.click()}>
+            <ImageIcon size={28} /> Escolher da Galeria
+          </button>
+          <button className="btn glass-panel"
+            style={{ width: '100%', height: '64px', fontSize: '1.125rem', justifyContent: 'flex-start', gap: '1rem', paddingLeft: '1.5rem', border: '1px solid var(--border-light)' }}
+            onClick={() => pdfInputRef.current?.click()}>
+            <FileText size={28} /> Carregar PDF
+          </button>
+          <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+            <hr style={{ flex: 1, borderColor: 'var(--border-light)' }} /> ou <hr style={{ flex: 1, borderColor: 'var(--border-light)' }} />
+          </div>
+          <button className="btn glass-panel"
+            style={{ width: '100%', height: '64px', fontSize: '1.125rem', justifyContent: 'flex-start', gap: '1rem', paddingLeft: '1.5rem', border: '1px solid var(--warning)', color: 'var(--warning)' }}
+            onClick={handleManualEntry}>
+            <PenLine size={28} /> Inserir Manualmente
+          </button>
+          <p style={{ color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.875rem', marginTop: '0.5rem' }}>
+            A IA processará a imagem automaticamente.
+          </p>
         </div>
       )}
 
-      {preview && (
+      {isScanning && (
+        <div className="flex-center" style={{ flexDirection: 'column', height: '40vh', gap: '1rem' }}>
+          <Loader2 size={48} color="var(--primary)" style={{ animation: 'spin 1s linear infinite' }} />
+          <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+          <h3>A analisar fatura...</h3>
+        </div>
+      )}
+
+      {showForm && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
-          <div className="card glass-panel" style={{ padding: '1rem', display: 'flex', flexDirection: 'column' }}>
-             <h3 style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between' }}>
-               Imagem Capturada
-               <button className="btn-icon" onClick={() => setPreview(null)} style={{ padding: '0.25rem' }} disabled={saving}><RefreshCw size={20}/></button>
-             </h3>
-             <div style={{ flex: 1, backgroundColor: 'var(--bg-base)', borderRadius: 'var(--radius-md)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-               <img src={preview} alt="Fatura" style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain' }} />
-             </div>
-          </div>
-
-          <div className="card glass-panel">
-            {isScanning ? (
-              <div className="flex-center" style={{ flexDirection: 'column', height: '100%', gap: '1rem', minHeight: '300px' }}>
-                <Loader2 size={48} color="var(--primary)" className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
-                <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
-                <h3>A analisar fatura...</h3>
+          {/* Preview panel (only for images) */}
+          {preview && (
+            <div className="card glass-panel" style={{ padding: '1rem', display: 'flex', flexDirection: 'column' }}>
+              <h3 style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between' }}>
+                Imagem Capturada
+                <button className="btn-icon" onClick={resetForm} style={{ padding: '0.25rem' }} disabled={saving}><RefreshCw size={20} /></button>
+              </h3>
+              <div style={{ flex: 1, backgroundColor: 'var(--bg-base)', borderRadius: 'var(--radius-md)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <img src={preview} alt="Fatura" style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain' }} />
               </div>
-            ) : scanComplete ? (
-              <div className="animate-fade-in">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem', color: 'var(--success)' }}>
-                  <CheckCircle size={24} />
-                  <h3 style={{ margin: 0, color: 'var(--text-primary)' }}>Validar Dados</h3>
-                </div>
+            </div>
+          )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                    <label className="form-label">Obra <span style={{ color: 'var(--danger)' }}>*</span></label>
-                    <select className="form-control" value={obraId} onChange={(e) => setObraId(e.target.value)} disabled={saving}>
-                      <option value="">Selecione...</option>
+          {/* Form panel */}
+          <div className="card glass-panel">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
+              <CheckCircle size={24} color="var(--success)" />
+              <h3 style={{ margin: 0 }}>{isManual ? 'Inserção Manual' : 'Validar Dados'}</h3>
+              {!preview && (
+                <button className="btn-icon" onClick={resetForm} style={{ marginLeft: 'auto', padding: '0.25rem' }} disabled={saving}><RefreshCw size={20} /></button>
+              )}
+            </div>
+
+            {/* Motivo Manual */}
+            {isManual && (
+              <div className="form-group">
+                <label className="form-label">Motivo de Inserção Manual <span style={{ color: 'var(--danger)' }}>*</span></label>
+                <select className="form-control" value={motivoManual} onChange={e => setMotivoManual(e.target.value)} disabled={saving}
+                  style={{ borderColor: motivoManual ? 'var(--border-light)' : 'var(--warning)' }}>
+                  <option value="">Selecione o motivo...</option>
+                  {MOTIVOS_MANUAL.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+            )}
+
+            {/* Header fields */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div className="form-group"><label className="form-label">Fornecedor</label>
+                <input type="text" className="form-control" value={fornecedor} onChange={e => setFornecedor(e.target.value)} disabled={saving} /></div>
+              <div className="form-group"><label className="form-label">Data</label>
+                <input type="date" className="form-control" value={dataCompra} onChange={e => setDataCompra(e.target.value)} disabled={saving} /></div>
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Total Fatura (€)</label>
+                <input type="number" step="0.01" className="form-control" value={valorTotal} onChange={e => setValorTotal(Number(e.target.value))} disabled={saving} /></div>
+            </div>
+
+            {/* Alocações por Obra */}
+            <div style={{ marginTop: '1rem', marginBottom: '1rem' }}>
+              <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                Alocação por Obra(s) <span style={{ color: 'var(--danger)' }}>*</span>
+                <button type="button" className="btn" style={{ fontSize: '0.75rem', padding: '0.25rem 0.75rem' }} onClick={addAlocacao}>
+                  <Plus size={14} /> Adicionar Obra
+                </button>
+              </label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {alocacoes.map((aloc, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <select className="form-control" value={aloc.obraId} onChange={e => updateAlocacao(idx, 'obraId', e.target.value)} disabled={saving} style={{ flex: 2 }}>
+                      <option value="">Selecione obra...</option>
                       {obras.map(o => <option key={o.id} value={o.id}>{o.nome_obra}</option>)}
                     </select>
+                    <input type="number" step="0.01" className="form-control" placeholder="€" value={aloc.valor}
+                      onChange={e => updateAlocacao(idx, 'valor', e.target.value)} disabled={saving} style={{ flex: 1 }} />
+                    {alocacoes.length > 1 && (
+                      <button type="button" className="btn-icon" onClick={() => removeAlocacao(idx)} disabled={saving} style={{ color: 'var(--danger)', flexShrink: 0 }}>
+                        <Trash2 size={18} />
+                      </button>
+                    )}
                   </div>
-                  <div className="form-group"><label className="form-label">Fornecedor</label><input type="text" className="form-control" value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} disabled={saving} /></div>
-                  <div className="form-group"><label className="form-label">Data</label><input type="date" className="form-control" value={dataCompra} onChange={(e) => setDataCompra(e.target.value)} disabled={saving} /></div>
-                  <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Total (€)</label><input type="number" step="0.01" className="form-control" value={valorTotal} onChange={(e) => setValorTotal(Number(e.target.value))} disabled={saving} /></div>
-                </div>
+                ))}
+              </div>
+              {alocacoes.length > 1 && (
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                  Total alocado: {alocacoes.reduce((s, a) => s + parseFloat(a.valor || '0'), 0).toFixed(2)}€ / {valorTotal.toFixed(2)}€
+                </p>
+              )}
+            </div>
 
-                <hr style={{ borderColor: 'var(--border-light)', margin: '2rem 0' }} />
+            <hr style={{ borderColor: 'var(--border-light)', margin: '1.5rem 0' }} />
 
+            {/* Items / Normalização */}
+            {items.length > 0 && (
+              <>
                 <h4 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <AlertCircle size={18} color="var(--warning)" />
-                  Normalização
+                  Normalização dos Produtos
                 </h4>
-                
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginBottom: '2rem' }}>
                   {items.map((item) => (
                     <div key={item.id} style={{ padding: '1rem', backgroundColor: 'var(--bg-base)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-focus)' }}>
                       <div style={{ marginBottom: '0.75rem', fontSize: '0.875rem' }}>
                         Texto Lido: <strong style={{ color: 'var(--text-secondary)' }}>{item.originalText}</strong>
                       </div>
-                      
                       <div className="form-group" style={{ marginBottom: '0.75rem' }}>
                         <label className="form-label">Produto Normalizado <span style={{ color: 'var(--danger)' }}>*</span></label>
-                        <Autocomplete 
-                          value={item.normalizedText} 
-                          onChange={(val) => handleItemNormalizationChange(item.id, val)} 
-                          options={knownProducts}
-                          placeholder="Pesquise ou escreva o nome..."
-                        />
+                        <Autocomplete value={item.normalizedText} onChange={(val) => setItems(items.map(i => i.id === item.id ? { ...i, normalizedText: val } : i))}
+                          options={knownProducts} placeholder="Pesquise ou escreva o nome..." />
                       </div>
-
                       <div style={{ display: 'flex', gap: '1rem' }}>
                         <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
                           <label className="form-label">Qtd</label>
-                          <input type="number" className="form-control" value={item.qty} onChange={(e) => setItems(items.map(i => i.id === item.id ? {...i, qty: Number(e.target.value)} : i))} disabled={saving} />
+                          <input type="number" className="form-control" value={item.qty} onChange={e => setItems(items.map(i => i.id === item.id ? { ...i, qty: Number(e.target.value) } : i))} disabled={saving} />
                         </div>
                         <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
                           <label className="form-label">Preço (€)</label>
-                          <input type="number" step="0.01" className="form-control" value={item.price} onChange={(e) => setItems(items.map(i => i.id === item.id ? {...i, price: Number(e.target.value)} : i))} disabled={saving} />
+                          <input type="number" step="0.01" className="form-control" value={item.price} onChange={e => setItems(items.map(i => i.id === item.id ? { ...i, price: Number(e.target.value) } : i))} disabled={saving} />
                         </div>
                       </div>
                     </div>
                   ))}
                 </div>
+              </>
+            )}
 
-                <button className="btn btn-primary" style={{ width: '100%', minHeight: '60px', fontSize: '1.125rem' }} onClick={handleSave} disabled={saving}>
-                  {saving ? <Loader2 className="animate-spin" size={24} /> : <Save size={24} />}
-                  {saving ? 'A gravar...' : 'Gravar Fatura'}
-                </button>
-              </div>
-            ) : null}
+            <button className="btn btn-primary" style={{ width: '100%', minHeight: '60px', fontSize: '1.125rem' }} onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 style={{ animation: 'spin 1s linear infinite' }} size={24} /> : <Save size={24} />}
+              {saving ? 'A gravar...' : 'Gravar Fatura'}
+            </button>
           </div>
         </div>
       )}

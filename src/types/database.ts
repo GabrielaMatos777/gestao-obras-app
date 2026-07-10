@@ -16,12 +16,21 @@ export type Obra = {
 
 export type Fatura = {
   id: string;
-  obra_id: string;
+  obra_id?: string | null;
   foto_url?: string;
   fornecedor: string;
   data_compra: string;
   valor_total: number;
+  motivo_manual?: string | null;
   registado_por: string;
+  created_at?: string;
+};
+
+export type FaturaAlocacao = {
+  id: string;
+  fatura_id: string;
+  obra_id: string;
+  valor_alocado: number;
   created_at?: string;
 };
 
