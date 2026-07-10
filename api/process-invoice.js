@@ -100,7 +100,20 @@ Não incluas blocos \`\`\`json ou outro texto fora deste JSON, apenas o próprio
     }
 
     if (!success) {
-      throw new Error(`Nenhum modelo suportado pela sua chave API funcionou. Último erro: ${lastErrorDetails}`);
+      let availableModelsStr = "Não foi possível verificar a lista de modelos.";
+      try {
+        const checkRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+        const data = await checkRes.json();
+        if (data && data.models) {
+          availableModelsStr = data.models.map(m => m.name.replace('models/', '')).join(', ');
+        } else if (data && data.error) {
+          availableModelsStr = `Erro ao listar: ${data.error.message}`;
+        }
+      } catch (e) {
+        console.error("Erro ao tentar listar modelos:", e);
+      }
+
+      throw new Error(`Nenhum modelo suportado pela sua chave API funcionou. Pode ter um bloqueio de região, limite esgotado ou precisar de ativar faturação (Billing) na Google Cloud. Modelos descobertos na sua chave: [${availableModelsStr}]. Último erro: ${lastErrorDetails}`);
     }
 
     let extractedText = response.text;
