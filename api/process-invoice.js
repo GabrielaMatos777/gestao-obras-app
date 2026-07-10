@@ -54,8 +54,8 @@ Não incluas blocos \`\`\`json ou outro texto fora deste JSON, apenas o próprio
     const base64Data = imageBase64.replace(/^data:[a-zA-Z0-9\/+-]+;base64,/, "");
 
     const fallbackModels = [
-      'gemini-2.5-flash',
-      'gemini-flash-latest'
+      'gemini-3.5-flash',
+      'gemini-3.1-flash-image'
     ];
 
     let response;
